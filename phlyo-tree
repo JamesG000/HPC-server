@@ -1,0 +1,856 @@
+# Missing USNM1072117 and AE98
+# clean-fastq/AR170/split-adapter-quality-trimmed/AR170-READ2.fastq.gz' has too many sequences' has too many sequences
+# Note ensure all inputs and outputs are preceeded by Coral/ doesnt need ~
+
+###########################################################################################################################
+# Rename all data files / Create metafolder
+###########################################################################################################################
+# See python script
+
+############################################################################################################################
+# Trim low qualtity bases
+############################################################################################################################
+# Start phyluce \
+source activate phyluce
+# Use JG_Config1.conf
+illumiprocessor \
+    --input Error_Data \
+    --output Error_Data_Clean \
+    --config Error_Config_1.conf \
+    --cores 12
+
+############################################################################################################################
+# Assemble data with second config file
+# None work only one that works is spades.py
+# Used a bash and a job file "my_bash.sh" and ./my_job.job or ./my_job2.job
+############################################################################################################################
+
+
+############################################################################################################################
+# Runs .spade.py
+############################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 30
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N spade-ass
+# FILE: spade-ass
+# Receives i from job script
+
+#loop over taxa
+for SPECIES in ~/Coral/clean-fastq/*
+
+do
+
+TAXON=`basename "$SPECIES"`
+
+
+source activate phyluce
+spades.py -o ./spade-data/$TAXON/ -1 ./clean-fastq/$TAXON/split-adapter-quality-trimmed/$TAXON-READ1.fastq.gz -2 ./clean-fastq/$TAXON/split-adapter-quality-trimmed/$TAXON-READ2.fastq.gz --cov-cutoff 2 --careful --threads 30
+conda deactivate
+done
+
+############################################################################################################################
+# Alternatively can do velvet (may be more accurate than spade)
+############################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y
+#$ -S /bin/bash
+#$ -q all.q
+#$ -N vel-ass
+
+source activate phyluce
+
+phyluce_assembly_assemblo_velvet \
+    --config ./vel-ass.conf \
+    --output ./vel-ass-out \
+    --kmer 35 \
+    --cores 12 \
+    --clean \
+    --log-path ~/Coral/logs/
+
+
+###########################################################################################################################
+# Files need to be renamed because you cant have numbers at the begining or the end of the file name
+###########################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y
+#$ -S /bin/bash
+#$ -q all.q
+#$ -N Moving_Files
+# FILE: Rename files
+
+for name in ./contigs/*
+do
+NME=`basename "$name"`
+mv ./contigs-test/"$NME" ./contigs-test/"jg-$NME"
+done
+
+
+
+############################################################################################################################
+# Find UCE Loci 
+############################################################################################################################
+
+# Download probe data
+# wget https://raw.githubusercontent.com/faircloth-lab/uce-probe-sets/master/uce-5k-probe-set/uce-5k-probes.fasta (didnt work on coral)
+# or
+# use Michelles!
+
+# Create bash file
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N vel-match
+
+source activate phyluce
+phyluce_assembly_match_contigs_to_probes \
+    --contigs ~/Coral/vel-ass-out/contigs \
+    --probes ~/Coral/all-probes.fasta \
+    --output ~/Coral/vel-matches
+
+
+
+
+
+############################################################################################################################
+# Extract UCE Loci
+############################################################################################################################
+
+# Create new config with [all] containging specied ID wanted
+
+############################################################################################################################
+# Make new dir "Coral/vel-taxon-sets/all"
+############################################################################################################################
+
+##################################################################### PART 1 ###############################################
+
+# Third config file needs creating
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N vel-extract
+
+source activate phyluce
+phyluce_assembly_get_match_counts \
+    --locus-db ~/Coral/vel-matches/probe.matches.sqlite \
+    --taxon-list-config ~/Coral/jg-con-3.conf \
+    --taxon-group 'all' \
+    --incomplete-matrix \
+    --output ~/Coral/vel-taxon-sets/all/all-taxa-incomplete.conf
+
+################## PART 2 ########################################################################################################################
+
+# Make new dir "Coral/vel-taxon-sets/all/logs"
+
+################## PART 3 ########################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N vel-match-counts
+
+source activate phyluce
+phyluce_assembly_get_fastas_from_match_counts \
+    --contigs ~/Coral/vel-ass-out/contigs \
+    --locus-db ~/Coral/vel-matches/probe.matches.sqlite \
+    --match-count-output ~/Coral/vel-taxon-sets/all/all-taxa-incomplete.conf \
+    --output ~/Coral/vel-taxon-sets/all/vel-all-taxa-incomplete.fasta \
+    --incomplete-matrix ~/Coral/vel-taxon-sets/all/vel-all-taxa-incomplete.incomplete \
+    --log-path ~/Coral/vel-taxon-sets/all/logs
+
+
+
+
+###########################################################################################################################
+# Looking at individual taxa
+###########################################################################################################################
+
+#################     SKIP       #########################################################################################
+
+#################     Part 1     #########################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N vel-ind-tax
+
+source activate phyluce
+phyluce_assembly_explode_get_fastas_file \
+    --input ~/Coral/vel-taxon-sets/all/vel-all-taxa-incomplete.fasta \
+    --output ~/Coral/vel-taxon-sets/all/exploded-fastas \
+    --by-taxon
+
+##################    Part 2     ######################################################################################
+
+# Get stats for each
+for i in exploded-fastas/*.fasta; do phyluce_assembly_get_fasta_lengths --input $i --csv; done
+
+##########################################################################################################################
+# Allign Data
+##########################################################################################################################
+
+############################ Option 1 ####################################################################################
+
+# > 50MYA divergence = internal trimming
+# < 50MYA divergence = edge trimming
+
+# For edge trimming use:
+phyluce_align_seqcap_align \
+    --fasta ~/Coral/vel-taxon-sets/all/all-taxa-incomplete.fasta \
+    --output ~/Coral/vel-taxon-sets/all/mafft-nexus-edge-trimmed \
+    --taxa 4 \
+    --aligner mafft \
+    --cores 12 \
+    --incomplete-matrix \
+    --log-path log
+
+# Output stats
+phyluce_align_get_align_summary_data \
+    --alignments ~/Coral/vel-taxon-sets/all/mafft-nexus-edge-trimmed \
+    --cores 12 \
+    --log-path ~/Coral/logs
+	
+############################ Option 2 ###########################################################################################
+
+################ For internal trimming use:
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N in-align
+
+source activate phyluce
+phyluce_align_seqcap_align \
+    --fasta ~/Coral/vel-taxon-sets/all/all-taxa-incomplete.fasta \
+    --output ~/Coral/vel-mafft-nexus-internal-trimmed \
+    --taxa 140 \
+    --aligner mafft \
+    --cores 12 \
+    --incomplete-matrix \
+    --output-format fasta \
+    --no-trim \
+    --log-path ~/Coral/logs
+	
+################ Trim files if internal trimming:
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N gblock-trim
+
+source activate phyluce
+phyluce_align_get_gblocks_trimmed_alignments_from_untrimmed \
+    --alignments ~/Coral/vel-mafft-nexus-internal-trimmed \
+    --output ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks \
+    --cores 12 \
+    --log ~/Coral/logs
+	
+################ Output stats
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N align-sum
+
+source activate phyluce
+phyluce_align_get_align_summary_data \
+    --alignments ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks \
+    --cores 12 \
+    --log-path ~/Coral/logs
+
+#########################################################################################################################
+# Clean names up
+#########################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N rem-l-nme
+
+source activate phyluce
+phyluce_align_remove_locus_name_from_nexus_lines \
+    --alignments ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks \
+    --output ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean \
+    --cores 12 \
+    --log-path ~/Coral/logs
+
+########################################################################################################################
+# Create 75% completeness matrix
+########################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N com-mat-75
+
+source activate phyluce
+phyluce_align_get_only_loci_with_min_taxa \
+    --alignments ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean \
+    --taxa 140 \
+    --percent 0.75 \
+    --output ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean-75p \
+    --cores 12 \
+    --log-path ~/Coral/logs
+
+######################################################################################################################
+# Generate phylip file for analysis
+######################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N phy-file
+
+source activate phyluce
+phyluce_align_format_nexus_files_for_raxml \
+    --alignments ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean-75p \
+    --output ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml \
+    --charsets \
+    --log-path ~/Coral/logs
+	
+	
+######################################################################################################################	
+# Copy dir to new location for safety
+######################################################################################################################
+
+cp -R vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-duplicate
+
+
+######################################################################################################################
+# Using RAxML
+######################################################################################################################
+
+###########    STEP 1    ############################################################################################
+
+# Generate random numbers
+for i in 1 2; do echo $RANDOM; done
+
+#12817
+#10390
+
+###########    STEP 2    ############################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ML-tree
+
+# Run best ML tree
+cd ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml
+source activate phyluce
+raxmlHPC-PTHREADS-SSE3 \
+    -m GTRGAMMA \
+    -N 20 \
+    -p 12817 \
+    -n best \
+    -s vel-mafft-nexus-internal-trimmed-gblocks-clean-75p.phylip \
+    -T 12
+
+
+###########    STEP 3    ############################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N anal-boot
+
+
+# Analyze bootstrap data
+source activate phyluce
+cd ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml
+raxmlHPC-PTHREADS-SSE3 \
+    -m GTRGAMMA \
+    -N autoMRE \
+    -p 12817 \
+    -b 10390 \
+    -n bootreps \
+    -s vel-mafft-nexus-internal-trimmed-gblocks-clean-75p.phylip \
+    -T 12
+	
+	
+###########    STEP 4    ############################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N recon-boot
+
+# Reconcile tree with bootstrap
+source activate phyluce
+cd ~/Coral/vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml
+raxmlHPC-SSE3 \
+    -m GTRGAMMA \
+    -f b \
+    -t RAxML_bestTree.best \
+    -z RAxML_bootstrap.bootreps \
+	-n reconciled-tree
+
+#####################
+# bipartition trees are the one with bootstrap values
+#####################
+
+
+#####################################################################################################################
+#####################################################################################################################
+#####################################################################################################################
+
+
+
+
+
+
+#####################################################################################################################
+# This next section gives a more indepth look
+#####################################################################################################################
+
+
+
+
+
+#####################################################################################################################
+#####################################################################################################################
+#####################################################################################################################
+
+#####################################################################################################################
+# Perfrom edge trim - the following appears not to work on internal trimmed data 
+#####################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N edge-trim
+
+# Edge trim
+source activate phyluce
+phyluce_align_seqcap_align \
+    --fasta  ~/Coral/vel-taxon-sets/all/vel-all-taxa-incomplete.fasta \
+    --output ~/Coral/vel-mafft-nexus-edge-trimmed \
+    --taxa 4 \
+    --aligner mafft \
+    --cores 12 \
+    --incomplete-matrix \
+    --log-path ~/Coral/logs
+
+#####################################################################################################################
+# Explode alligned data into individuals
+#####################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N exp-edge
+
+# Explode data 
+source activate phyluce
+phyluce_align_explode_alignments \
+    --alignments ~/Coral/vel-mafft-nexus-edge-trimmed \
+    --input-format nexus \
+    --output ~/Coral/vel-mafft-nexus-edge-trimmed-exploded \
+    --by-taxon
+
+
+#####################################################################################################################
+# Create reallignment config
+#####################################################################################################################
+
+# Example: Saved as phasing.conf in Coral
+# DO NOT USE ~ AS A SHORTCUT! it doesn't work
+# i.e. jg_11237:~/Coral/vel-mafft-nexus-edge-trimmed-exploded/jg_11237.fasta
+
+[references]
+jg_11237:/home/jg18597/Coral/vel-mafft-nexus-edge-trimmed-exploded/jg_11237.fasta
+
+[individuals]
+jg_AR170:/home/jg18597/Coral/clean-fastq/AR170/split-adapter-quality-trimmed/
+
+[flowcell] # can be used for sample and run information for easy ID later
+jg_AR170:jg_AR170
+
+
+#####################################################################################################################
+# Map reads against contigs
+#####################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N map-reads
+
+source activate phyluce
+phyluce_snp_bwa_multiple_align \
+    --config ~/Coral/phasing.conf \
+    --output ~/Coral/vel-multialign-bams \
+    --cores 4 \
+    --log-path ~/Coral/logs \
+    --mem
+	
+#####################################################################################################################
+# Phase map reads
+#####################################################################################################################	
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N phase-map-reads
+
+source activate phyluce	
+phyluce_snp_phase_uces \
+    --config ~/Coral/phasing.conf \
+    --bams ~/Coral/vel-multialign-bams \
+    --output ~/Coral/vel-multialign-bams-phased-reads
+	
+	
+
+#####################################################################################################################
+# Repeat steps from first lot of code to produce tree
+#####################################################################################################################	
+
+#####################################################################################################################
+# Align files 
+#####################################################################################################################
+
+
+############################# DROPS A LOT OF UCES ##################################################
+############################# SEE phase-align.txt
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N phase-align
+
+source activate phyluce
+phyluce_align_seqcap_align \
+    --fasta ~/Coral/vel-multialign-bams-phased-reads/fastas/joined_allele_sequences_all_samples.fasta \
+    --output ~/Coral/phased-vel-mafft-nexus-internal-trimmed \
+    --taxa 140 \
+    --aligner mafft \
+    --cores 12 \
+    --incomplete-matrix \
+    --output-format fasta \
+    --no-trim \
+    --log-path ~/Coral/logs
+	
+#####################################################################################################################
+# Trim files 
+#####################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-gblock-trim
+
+source activate phyluce
+phyluce_align_get_gblocks_trimmed_alignments_from_untrimmed \
+    --alignments ~/Coral/phased-vel-mafft-nexus-internal-trimmed \
+    --output ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks \
+    --cores 12 \
+    --log ~/Coral/logs
+
+#####################################################################################################################
+# Get output stats 
+#####################################################################################################################	
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-align-sum
+
+source activate phyluce
+phyluce_align_get_align_summary_data \
+    --alignments ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks \
+    --cores 12 \
+    --log-path ~/Coral/logs
+
+#########################################################################################################################
+# Clean names up
+#########################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-rem-l-nme
+
+source activate phyluce
+phyluce_align_remove_locus_name_from_nexus_lines \
+    --alignments ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks \
+    --output ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean \
+    --cores 12 \
+    --log-path ~/Coral/logs
+
+########################################################################################################################
+# Create 75% completeness matrix
+########################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-com-mat-75
+
+source activate phyluce
+phyluce_align_get_only_loci_with_min_taxa \
+    --alignments ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean \
+    --taxa 140 \
+    --percent 0.75 \
+    --output ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p \
+    --cores 12 \
+    --log-path ~/Coral/logs
+
+######################################################################################################################
+# Generate phylip file for analysis
+######################################################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-phy-file
+
+source activate phyluce
+phyluce_align_format_nexus_files_for_raxml \
+    --alignments ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p \
+    --output ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml \
+    --charsets \
+    --log-path ~/Coral/logs
+	
+	
+######################################################################################################################	
+# Copy dir to new location for safety
+######################################################################################################################
+
+cp -R phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-duplicate
+
+
+######################################################################################################################
+# Using RAxML
+######################################################################################################################
+
+###########    STEP 1    ############################################################################################
+
+# Generate random numbers
+for i in 1 2; do echo $RANDOM; done
+
+#12817 18341
+
+#10390 23096
+
+
+###########    STEP 2    ############################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-ML-tree
+
+# Run best ML tree
+cd ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml
+source activate phyluce
+raxmlHPC-PTHREADS-SSE3 \
+    -m GTRGAMMA \
+    -N 20 \
+    -p 18341 \
+    -n best \
+    -s phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p.phylip \
+    -T 12
+
+
+###########    STEP 3    ############################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-anal-boot
+
+
+# Analyze bootstrap data
+source activate phyluce
+cd ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml
+raxmlHPC-PTHREADS-SSE3 \
+    -m GTRGAMMA \
+    -N autoMRE \
+    -p 18341 \
+    -b 23096 \
+    -n bootreps \
+    -s phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p.phylip \
+    -T 12
+	
+	
+###########    STEP 4    ############################################################################################
+
+#!/bin/bash
+#$ -M jg18597@essex.ac.uk
+#$ -m be
+#$ -pe smp 10
+#$ -cwd
+#$ -j y 
+#$ -S /bin/bash 
+#$ -q all.q 
+#$ -N ph-recon-boot
+
+cd ~/Coral/phased-vel-mafft-nexus-internal-trimmed-gblocks-clean-75p-raxml
+# Reconcile tree with bootstrap
+source activate phyluce
+raxmlHPC-SSE3 \
+    -m GTRGAMMA \
+    -f b \
+    -t RAxML_bestTree.best \
+    -z RAxML_bootstrap.bootreps
+	
+	
+	
+#####################################################################################################
+# To root the trees first add an R script
+#####################################################################################################
+
+# Download tree file, convert to txt
+# Run script in r on local computer 
+
+library(ape)
+library(phangorn)
+setwd("G:/Coral/findings/unrooted-trees-editted/")
+t <- read.tree("raw_tree.txt")
+t2 <- root(t, "jg_AR307") # roots around select species (can also be done around node)
+t3 <- as.dendrogram(t2)
+# Save dendrogram
+write.dendrogram(t3, file= "treev2.txt", edges = FALSE)
